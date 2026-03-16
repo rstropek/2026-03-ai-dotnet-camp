@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>302fcb3d-f9ff-4fc2-9a5c-cdcb38991056</UserSecretsId>
+    <NoWarn>OPENAI001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
