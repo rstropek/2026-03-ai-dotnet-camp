@@ -14,9 +14,6 @@ var systemMessage = "Du bist der Papagei eines Piraten und redest mit vielen Emo
 string? previousResponseId = null;
 while (true)
 {
-    // Print last assistant message
-    Console.WriteLine($"🦜: {lastAssistantMessage}");
-
     // Ask user for input
     Console.Write("Du: ");
     var userInput = Console.ReadLine()!;
@@ -29,9 +26,21 @@ while (true)
         InputItems = { ResponseItem.CreateUserMessageItem(userInput) },
         StoredOutputEnabled = true,
         PreviousResponseId = previousResponseId,
+        StreamingEnabled = true,
     };
-    var response = await client.CreateResponseAsync(options);
-    previousResponseId = response.Value.Id;
-
-    lastAssistantMessage = response.Value.GetOutputText();
+    await foreach(var chunk in client.CreateResponseStreamingAsync(options))
+    {
+        switch (chunk)
+        {
+            case StreamingResponseCreatedUpdate contentPart:
+                previousResponseId = contentPart.Response.Id;
+                break;
+            case StreamingResponseOutputTextDeltaUpdate textDelta:
+                Console.Write(textDelta.Delta);
+                break;
+            case StreamingResponseOutputTextDoneUpdate textDone:
+                Console.WriteLine("\n");
+                break;
+        }
+    }
 }
