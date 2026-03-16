@@ -1,0 +1,107 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Markdig
+@inject OpenAI.OpenAIClient OpenAIClient
+@inject IWebHostEnvironment Env
+
+<PageTitle>DönerBot Chat</PageTitle>
+
+<div class="chat-container">
+    <div class="chat-history" @ref="chatHistoryRef">
+        @foreach (var msg in messages)
+        {
+            <div class="chat-message @(msg.Role == "user" ? "user-message" : "assistant-message")">
+                <div class="message-bubble">@((MarkupString)Markdown.ToHtml(msg.Content, markdownPipeline))</div>
+            </div>
+        }
+    </div>
+
+    <div class="chat-input-bar">
+        <input type="text" @bind="currentInput" @bind:event="oninput"
+               @onkeydown="HandleKeyDown" placeholder="Nachricht eingeben..."
+               disabled="@isSending" />
+        <button @onclick="SendMessage" disabled="@(isSending || string.IsNullOrWhiteSpace(currentInput))">Senden</button>
+    </div>
+</div>
+
+@code {
+    private static readonly MarkdownPipeline markdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+    private List<ChatMessage> messages = new();
+    private string currentInput = string.Empty;
+    private bool isSending;
+    private string? previousResponseId;
+    private string systemPrompt = string.Empty;
+    private ElementReference chatHistoryRef;
+
+    protected override void OnInitialized()
+    {
+        var promptPath = Path.Combine(AppContext.BaseDirectory, "systemprompt.md");
+        if (File.Exists(promptPath))
+        {
+            systemPrompt = File.ReadAllText(promptPath);
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !isSending && !string.IsNullOrWhiteSpace(currentInput))
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(currentInput) || isSending) return;
+
+        var userText = currentInput.Trim();
+        currentInput = string.Empty;
+        isSending = true;
+
+        messages.Add(new ChatMessage("user", userText));
+        messages.Add(new ChatMessage("assistant", ""));
+        var assistantMsg = messages[^1];
+
+        try
+        {
+            var client = OpenAIClient.GetResponsesClient();
+            var options = new OpenAI.Responses.CreateResponseOptions
+            {
+                Model = "gpt-5.2",
+                Instructions = systemPrompt,
+                StoredOutputEnabled = true,
+                PreviousResponseId = previousResponseId,
+                StreamingEnabled = true,
+            };
+            options.InputItems.Add(OpenAI.Responses.ResponseItem.CreateUserMessageItem(userText));
+
+            await foreach (var chunk in client.CreateResponseStreamingAsync(options))
+            {
+                switch (chunk)
+                {
+                    case OpenAI.Responses.StreamingResponseCreatedUpdate created:
+                        previousResponseId = created.Response.Id;
+                        break;
+                    case OpenAI.Responses.StreamingResponseOutputTextDeltaUpdate delta:
+                        assistantMsg.Content += delta.Delta;
+                        await InvokeAsync(StateHasChanged);
+                        break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            assistantMsg.Content = $"Fehler: {ex.Message}";
+        }
+        finally
+        {
+            isSending = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private record ChatMessage(string Role, string Content)
+    {
+        public string Content { get; set; } = Content;
+    }
+}
