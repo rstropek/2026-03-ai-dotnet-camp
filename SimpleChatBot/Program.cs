@@ -8,9 +8,9 @@ var config = new ConfigurationBuilder()
 var client = new ResponsesClient(config["OPENAI_API_KEY"]);
 
 // Message-History
-var systemMessage = "Du bist der Papagei eines Piraten und redest mit vielen Emojis";
+var systemMessage = File.ReadAllText("systemprompt.md");
 
-Console.WriteLine("Craaaw! Hallo, Landratte 🦜");
+Console.WriteLine("Willkommen bei DönerBrot!");
 
 string? previousResponseId = null;
 while (true)
