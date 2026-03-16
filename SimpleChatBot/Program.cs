@@ -9,12 +9,9 @@ var client = new ResponsesClient(config["OPENAI_API_KEY"]);
 
 // Message-History
 var lastAssistantMessage = "Craaaw! Hallo, Landratte 🦜";
-List<ResponseItem> messages =
-[
-    ResponseItem.CreateSystemMessageItem("Du bist der Papagei eines Piraten und redest mit vielen Emojis"),
-    ResponseItem.CreateAssistantMessageItem(lastAssistantMessage),
-];
+var systemMessage = "Du bist der Papagei eines Piraten und redest mit vielen Emojis";
 
+string? previousResponseId = null;
 while (true)
 {
     // Print last assistant message
@@ -24,12 +21,17 @@ while (true)
     Console.Write("Du: ");
     var userInput = Console.ReadLine()!;
 
-    // Add user message to message history
-    messages.Add(ResponseItem.CreateUserMessageItem(userInput));
-
     // Get response from OpenAI
-    var response = await client.CreateResponseAsync("gpt-5.2", messages);
+    var options = new CreateResponseOptions()
+    {
+        Model = "gpt-5.2",
+        Instructions = systemMessage,
+        InputItems = { ResponseItem.CreateUserMessageItem(userInput) },
+        StoredOutputEnabled = true,
+        PreviousResponseId = previousResponseId,
+    };
+    var response = await client.CreateResponseAsync(options);
+    previousResponseId = response.Value.Id;
 
-    messages.Add(ResponseItem.CreateAssistantMessageItem(response.Value.GetOutputText()));
     lastAssistantMessage = response.Value.GetOutputText();
 }
