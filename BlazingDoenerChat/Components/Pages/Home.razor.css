@@ -67,6 +67,26 @@
     margin-bottom: 0.1rem;
 }
 
+.tool-call-entry {
+    display: flex;
+    justify-content: center;
+    padding: 0.15rem 0;
+}
+
+.tool-call-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.2rem 0.6rem;
+    font-family: monospace;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-input-bar {
     display: flex;
     gap: 0.5rem;

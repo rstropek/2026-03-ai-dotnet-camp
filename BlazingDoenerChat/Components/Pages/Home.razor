@@ -1,6 +1,12 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 @using Markdig
+@using System.ComponentModel
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using System.Text.Json.Schema
+@using System.Text.Json.Serialization
+@using System.Text.Json.Serialization.Metadata
 @inject OpenAI.OpenAIClient OpenAIClient
 @inject IWebHostEnvironment Env
 
@@ -10,9 +16,18 @@
     <div class="chat-history" @ref="chatHistoryRef">
         @foreach (var msg in messages)
         {
-            <div class="chat-message @(msg.Role == "user" ? "user-message" : "assistant-message")">
-                <div class="message-bubble">@((MarkupString)Markdown.ToHtml(msg.Content, markdownPipeline))</div>
-            </div>
+            if (msg.Role == "tool-call")
+            {
+                <div class="tool-call-entry">
+                    <span class="tool-call-label">🔧 @msg.Content</span>
+                </div>
+            }
+            else
+            {
+                <div class="chat-message @(msg.Role == "user" ? "user-message" : "assistant-message")">
+                    <div class="message-bubble">@((MarkupString)Markdown.ToHtml(msg.Content, markdownPipeline))</div>
+                </div>
+            }
         }
     </div>
 
@@ -26,11 +41,54 @@
 
 @code {
     private static readonly MarkdownPipeline markdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    private static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
+
+    private static readonly OpenAI.Responses.ResponseTool getMenuTool = CreateGetMenuTool();
+
+    private static OpenAI.Responses.ResponseTool CreateGetMenuTool()
+    {
+        var schemaNode = jsonOptions.GetJsonSchemaAsNode(typeof(GetMenuArgs), new JsonSchemaExporterOptions
+        {
+            TreatNullObliviousAsNonNullable = true,
+            TransformSchemaNode = (context, schema) =>
+            {
+                var attrProvider = context.PropertyInfo?.AttributeProvider ?? context.TypeInfo.Type;
+                var desc = attrProvider?
+                    .GetCustomAttributes(typeof(DescriptionAttribute), true)
+                    .OfType<DescriptionAttribute>()
+                    .FirstOrDefault();
+                if (desc is not null && schema is JsonObject jObj)
+                {
+                    jObj.Insert(0, "description", desc.Description);
+                }
+                if (schema is JsonObject obj && obj.ContainsKey("properties"))
+                {
+                    obj["additionalProperties"] = false;
+                }
+                return schema;
+            }
+        });
+
+        return OpenAI.Responses.ResponseTool.CreateFunctionTool(
+            "GetMenu",
+            BinaryData.FromString(schemaNode.ToJsonString()),
+            strictModeEnabled: true,
+            functionDescription: "Returns menu items and prices from the Döner restaurant. Use this whenever a customer asks about the menu, available items, or prices."
+        );
+    }
+
     private List<ChatMessage> messages = new();
     private string currentInput = string.Empty;
     private bool isSending;
     private string? previousResponseId;
     private string systemPrompt = string.Empty;
+    private string menuJson = string.Empty;
+    private Menu menu = new();
     private ElementReference chatHistoryRef;
 
     protected override void OnInitialized()
@@ -40,6 +98,30 @@
         {
             systemPrompt = File.ReadAllText(promptPath);
         }
+
+        var menuPath = Path.Combine(AppContext.BaseDirectory, "menu.json");
+        if (File.Exists(menuPath))
+        {
+            menuJson = File.ReadAllText(menuPath);
+            menu = JsonSerializer.Deserialize<Menu>(menuJson, jsonOptions)!;
+        }
+    }
+
+    private string GetMenu(MenuCategory category)
+    {
+        if (category == MenuCategory.All)
+        {
+            return menuJson;
+        }
+
+        return category switch
+        {
+            MenuCategory.Foods => JsonSerializer.Serialize(menu.Foods, jsonOptions),
+            MenuCategory.Drinks => JsonSerializer.Serialize(menu.Drinks, jsonOptions),
+            MenuCategory.Extras => JsonSerializer.Serialize(menu.Extras, jsonOptions),
+            MenuCategory.Sauces => JsonSerializer.Serialize(menu.Sauces, jsonOptions),
+            _ => """{"error": "Unknown category"}"""
+        };
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -65,28 +147,67 @@
         try
         {
             var client = OpenAIClient.GetResponsesClient();
-            var options = new OpenAI.Responses.CreateResponseOptions
-            {
-                Model = "gpt-5.2",
-                Instructions = systemPrompt,
-                StoredOutputEnabled = true,
-                PreviousResponseId = previousResponseId,
-                StreamingEnabled = true,
-            };
-            options.InputItems.Add(OpenAI.Responses.ResponseItem.CreateUserMessageItem(userText));
+            List<OpenAI.Responses.ResponseItem> inputItems = [OpenAI.Responses.ResponseItem.CreateUserMessageItem(userText)];
 
-            await foreach (var chunk in client.CreateResponseStreamingAsync(options))
+            // Loop to handle tool calls — continues until the model produces a text response
+            while (true)
             {
-                switch (chunk)
+                var options = new OpenAI.Responses.CreateResponseOptions
                 {
-                    case OpenAI.Responses.StreamingResponseCreatedUpdate created:
-                        previousResponseId = created.Response.Id;
-                        break;
-                    case OpenAI.Responses.StreamingResponseOutputTextDeltaUpdate delta:
-                        assistantMsg.Content += delta.Delta;
-                        await InvokeAsync(StateHasChanged);
-                        break;
+                    Model = "gpt-5.2",
+                    Instructions = systemPrompt,
+                    StoredOutputEnabled = true,
+                    PreviousResponseId = previousResponseId,
+                    StreamingEnabled = true,
+                    Tools = { getMenuTool },
+                };
+
+                foreach (var item in inputItems)
+                {
+                    options.InputItems.Add(item);
                 }
+
+                var functionCalls = new List<OpenAI.Responses.FunctionCallResponseItem>();
+
+                await foreach (var chunk in client.CreateResponseStreamingAsync(options))
+                {
+                    switch (chunk)
+                    {
+                        case OpenAI.Responses.StreamingResponseCreatedUpdate created:
+                            previousResponseId = created.Response.Id;
+                            break;
+                        case OpenAI.Responses.StreamingResponseOutputTextDeltaUpdate delta:
+                            assistantMsg.Content += delta.Delta;
+                            await InvokeAsync(StateHasChanged);
+                            break;
+                        case OpenAI.Responses.StreamingResponseOutputItemDoneUpdate itemDone
+                            when itemDone.Item is OpenAI.Responses.FunctionCallResponseItem funcCall:
+                            functionCalls.Add(funcCall);
+                            break;
+                    }
+                }
+
+                // If tool(s) were called, execute them all and loop back with the results
+                if (functionCalls.Count > 0)
+                {
+                    inputItems = [];
+                    foreach (var funcCall in functionCalls)
+                    {
+                        if (funcCall.FunctionName == "GetMenu")
+                        {
+                            var menuArgs = JsonSerializer.Deserialize<GetMenuArgs>(funcCall.FunctionArguments.ToString(), jsonOptions)!;
+                            var result = GetMenu(menuArgs.Category);
+                            // Insert the tool-call log before the placeholder assistant message
+                            var assistantMsgIndex = messages.IndexOf(assistantMsg);
+                            messages.Insert(assistantMsgIndex, new ChatMessage("tool-call", $"{funcCall.FunctionName}({funcCall.FunctionArguments})"));
+                            await InvokeAsync(StateHasChanged);
+                            inputItems.Add(OpenAI.Responses.ResponseItem.CreateFunctionCallOutputItem(funcCall.CallId, result));
+                        }
+                    }
+                    continue;
+                }
+
+                break; // No tool call — done with this turn
             }
         }
         catch (Exception ex)
@@ -103,5 +224,42 @@
     private record ChatMessage(string Role, string Content)
     {
         public string Content { get; set; } = Content;
+    }
+
+    [JsonConverter(typeof(JsonStringEnumConverter<MenuCategory>))]
+    private enum MenuCategory
+    {
+        [Description("Main food items")]
+        Foods,
+        [Description("Available drinks")]
+        Drinks,
+        [Description("Extra toppings and add-ons")]
+        Extras,
+        [Description("Available sauces")]
+        Sauces,
+        [Description("The complete menu with all categories")]
+        All
+    }
+
+    private class GetMenuArgs
+    {
+        [Description("The menu category to retrieve: foods, drinks, extras, sauces, or all for the complete menu. Always limit to the category that you really need. Only use `all` if the user explicitly asks for the entire menu or if you really need to show all categories to answer the user's question.")]
+        public required MenuCategory Category { get; init; }
+    }
+
+    private class MenuItem
+    {
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        public required decimal Price { get; init; }
+    }
+
+    private class Menu
+    {
+        public string? Currency { get; init; }
+        public List<MenuItem>? Foods { get; init; }
+        public List<MenuItem>? Drinks { get; init; }
+        public List<MenuItem>? Extras { get; init; }
+        public List<string>? Sauces { get; init; }
     }
 }
