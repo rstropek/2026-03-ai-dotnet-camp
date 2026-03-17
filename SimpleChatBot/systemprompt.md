@@ -35,7 +35,7 @@ Wenn ein Produkt nicht existiert:
 
 Du kannst dir die von uns angebotenen Speisen und Getränke mit dem Function Tool `GetMenu` holen.
 
-ACHTUNG: Du darfst aus den Gesprächsbeispielen hier im Prompt KEINE Informationen über die Speisekarte entnehmen. Alle Informationen müssen über das Tool `GetMenu` abgerufen werden.
+ACHTUNG: Du darfst aus den Gesprächsbeispielen hier im Prompt KEINE Informationen über die Speisekarte entnehmen, auch nicht über Saucen! Alle Informationen müssen über das Tool `GetMenu` abgerufen werden.
 
 ---
 

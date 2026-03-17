@@ -104,9 +104,7 @@ while (true)
             options.InputItems.Add(item);
         }
 
-        string? functionCallId = null;
-        string? functionName = null;
-        BinaryData? functionArgs = null;
+        var functionCalls = new List<FunctionCallResponseItem>();
 
         await foreach (var chunk in client.CreateResponseStreamingAsync(options))
         {
@@ -123,22 +121,26 @@ while (true)
                     break;
                 case StreamingResponseOutputItemDoneUpdate itemDone
                     when itemDone.Item is FunctionCallResponseItem funcCall:
-                    functionCallId = funcCall.CallId;
-                    functionName = funcCall.FunctionName;
-                    functionArgs = funcCall.FunctionArguments;
+                    functionCalls.Add(funcCall);
                     break;
             }
         }
 
-        // If a tool was called, execute it and loop back with the result
-        if (functionCallId is not null && functionName == "GetMenu")
+        // If tool(s) were called, execute them all and loop back with the results
+        if (functionCalls.Count > 0)
         {
-            Console.WriteLine($"\n🔧 Function call: {functionName}({functionArgs})");
-            var menuArgs = JsonSerializer.Deserialize<GetMenuArgs>(functionArgs!.ToString(), jsonOptions)!;
-            var result = GetMenu(menuArgs.Category);
-            Console.WriteLine($"📋 Result: {result}\n");
-
-            inputItems = [ResponseItem.CreateFunctionCallOutputItem(functionCallId, result)];
+            inputItems = [];
+            foreach (var funcCall in functionCalls)
+            {
+                if (funcCall.FunctionName == "GetMenu")
+                {
+                    Console.WriteLine($"\n🔧 Function call: {funcCall.FunctionName}({funcCall.FunctionArguments})");
+                    var menuArgs = JsonSerializer.Deserialize<GetMenuArgs>(funcCall.FunctionArguments.ToString(), jsonOptions)!;
+                    var result = GetMenu(menuArgs.Category);
+                    Console.WriteLine($"📋 Result: {result}\n");
+                    inputItems.Add(ResponseItem.CreateFunctionCallOutputItem(funcCall.CallId, result));
+                }
+            }
             continue;
         }
 
