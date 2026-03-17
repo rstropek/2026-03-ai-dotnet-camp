@@ -1,0 +1,30 @@
+{
+  "currency": "EUR",
+  "foods": [
+    { "id": "doner_kebab", "name": "Döner Kebab", "price": 6.50 },
+    { "id": "durum_doner", "name": "Dürüm Döner", "price": 7.00 },
+    { "id": "doner_box", "name": "Döner Box", "price": 6.00 },
+    { "id": "falafel_bread", "name": "Falafel im Brot", "price": 6.00 },
+    { "id": "falafel_plate", "name": "Falafel Teller", "price": 8.50 },
+    { "id": "fries", "name": "Pommes", "price": 3.00 }
+  ],
+  "drinks": [
+    { "id": "cola", "name": "Cola", "price": 2.50 },
+    { "id": "cola_zero", "name": "Cola Zero", "price": 2.50 },
+    { "id": "fanta", "name": "Fanta", "price": 2.50 },
+    { "id": "sprite", "name": "Sprite", "price": 2.50 },
+    { "id": "ayran", "name": "Ayran", "price": 2.00 },
+    { "id": "water", "name": "Wasser", "price": 2.00 }
+  ],
+  "extras": [
+    { "id": "extra_meat", "name": "Extra Fleisch", "price": 2.00 },
+    { "id": "extra_cheese", "name": "Extra Käse", "price": 1.00 },
+    { "id": "extra_falafel", "name": "Extra Falafel", "price": 1.50 }
+  ],
+  "sauces": [
+    "Knoblauchsauce",
+    "Joghurtsauce",
+    "Scharfe Sauce",
+    "Kräutersauce"
+  ]
+}
