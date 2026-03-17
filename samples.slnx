@@ -2,6 +2,7 @@
   <Project Path="BlazingDoenerChat.AppHost/BlazingDoenerChat.AppHost.csproj" />
   <Project Path="BlazingDoenerChat.ServiceDefaults/BlazingDoenerChat.ServiceDefaults.csproj" />
   <Project Path="BlazingDoenerChat/BlazingDoenerChat.csproj" />
+  <Project Path="MenuMcp/MenuMcp.csproj" />
   <Project Path="Playground/Playground.csproj" />
   <Project Path="SimpleChatBot/SimpleChatBot.csproj" />
 </Solution>
