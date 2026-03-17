@@ -30,7 +30,8 @@ var getMenuTool = ResponseTool.CreateFunctionTool(
                 @enum = new[] { "foods", "drinks", "extras", "sauces", "all" }
             }
         },
-        required = new[] { "category" }
+        required = new[] { "category" },
+        additionalProperties = false
     }),
     strictModeEnabled: true,
     functionDescription: "Returns menu items and prices from the Döner restaurant. Use this whenever a customer asks about the menu, available items, or prices."
