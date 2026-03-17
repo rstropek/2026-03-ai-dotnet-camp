@@ -1,4 +1,8 @@
-﻿using System.Text.Json;
+﻿using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Schema;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using OpenAI.Responses;
 
@@ -8,48 +12,67 @@ var config = new ConfigurationBuilder()
 
 var client = new ResponsesClient(config["OPENAI_API_KEY"]);
 
+var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+{
+    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+};
+
 // Message-History
 var systemMessage = File.ReadAllText("systemprompt.md");
 
 // Menu data for function calling
 var menuJson = File.ReadAllText("menu.json");
-var menuDocument = JsonDocument.Parse(menuJson);
+var menu = JsonSerializer.Deserialize<Menu>(menuJson, jsonOptions)!;
 
-// Define the GetMenu function tool
+// Generate JSON schema from DTO for the function tool
+var schemaNode = jsonOptions.GetJsonSchemaAsNode(typeof(GetMenuArgs), new JsonSchemaExporterOptions
+{
+    TreatNullObliviousAsNonNullable = true,
+    TransformSchemaNode = (context, schema) =>
+    {
+        // Add description from DescriptionAttribute
+        var attrProvider = context.PropertyInfo?.AttributeProvider ?? context.TypeInfo.Type;
+        var desc = attrProvider?
+            .GetCustomAttributes(typeof(DescriptionAttribute), true)
+            .OfType<DescriptionAttribute>()
+            .FirstOrDefault();
+        if (desc is not null && schema is JsonObject jObj)
+        {
+            jObj.Insert(0, "description", desc.Description);
+        }
+
+        // Add additionalProperties: false for object types (required by OpenAI strict mode)
+        if (schema is JsonObject obj && obj.ContainsKey("properties"))
+        {
+            obj["additionalProperties"] = false;
+        }
+
+        return schema;
+    }
+});
+
 var getMenuTool = ResponseTool.CreateFunctionTool(
     "GetMenu",
-    BinaryData.FromObjectAsJson(new
-    {
-        type = "object",
-        properties = new
-        {
-            category = new
-            {
-                type = "string",
-                description = "The menu category to retrieve: foods, drinks, extras, sauces, or all for the complete menu.",
-                @enum = new[] { "foods", "drinks", "extras", "sauces", "all" }
-            }
-        },
-        required = new[] { "category" },
-        additionalProperties = false
-    }),
+    BinaryData.FromString(schemaNode.ToJsonString()),
     strictModeEnabled: true,
     functionDescription: "Returns menu items and prices from the Döner restaurant. Use this whenever a customer asks about the menu, available items, or prices."
 );
 
-string GetMenu(string category)
+string GetMenu(MenuCategory category)
 {
-    if (category == "all")
+    if (category == MenuCategory.All)
     {
         return menuJson;
     }
 
-    if (menuDocument.RootElement.TryGetProperty(category, out var categoryElement))
+    return category switch
     {
-        return categoryElement.GetRawText();
-    }
-
-    return """{"error": "Unknown category"}""";
+        MenuCategory.Foods => JsonSerializer.Serialize(menu.Foods, jsonOptions),
+        MenuCategory.Drinks => JsonSerializer.Serialize(menu.Drinks, jsonOptions),
+        MenuCategory.Extras => JsonSerializer.Serialize(menu.Extras, jsonOptions),
+        MenuCategory.Sauces => JsonSerializer.Serialize(menu.Sauces, jsonOptions),
+        _ => """{"error": "Unknown category"}"""
+    };
 }
 
 Console.WriteLine("Willkommen bei DönerBrot!");
@@ -110,9 +133,10 @@ while (true)
         // If a tool was called, execute it and loop back with the result
         if (functionCallId is not null && functionName == "GetMenu")
         {
-            var parsedArgs = JsonDocument.Parse(functionArgs!);
-            var category = parsedArgs.RootElement.GetProperty("category").GetString()!;
-            var result = GetMenu(category);
+            Console.WriteLine($"\n🔧 Function call: {functionName}({functionArgs})");
+            var menuArgs = JsonSerializer.Deserialize<GetMenuArgs>(functionArgs!.ToString(), jsonOptions)!;
+            var result = GetMenu(menuArgs.Category);
+            Console.WriteLine($"📋 Result: {result}\n");
 
             inputItems = [ResponseItem.CreateFunctionCallOutputItem(functionCallId, result)];
             continue;
@@ -120,4 +144,43 @@ while (true)
 
         break; // No tool call — done with this turn
     }
+}
+
+// DTOs for JSON schema generation and deserialization
+
+[JsonConverter(typeof(JsonStringEnumConverter<MenuCategory>))]
+enum MenuCategory
+{
+    [Description("Main food items")]
+    Foods,
+    [Description("Available drinks")]
+    Drinks,
+    [Description("Extra toppings and add-ons")]
+    Extras,
+    [Description("Available sauces")]
+    Sauces,
+    [Description("The complete menu with all categories")]
+    All
+}
+
+class GetMenuArgs
+{
+    [Description("The menu category to retrieve: foods, drinks, extras, sauces, or all for the complete menu. Always limit to the category that you really need. Only use `all` if the user explicitly asks for the entire menu or if you really need to show all categories to answer the user's question.")]
+    public required MenuCategory Category { get; init; }
+}
+
+class MenuItem
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required decimal Price { get; init; }
+}
+
+class Menu
+{
+    public string? Currency { get; init; }
+    public List<MenuItem>? Foods { get; init; }
+    public List<MenuItem>? Drinks { get; init; }
+    public List<MenuItem>? Extras { get; init; }
+    public List<string>? Sauces { get; init; }
 }

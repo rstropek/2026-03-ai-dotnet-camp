@@ -31,42 +31,11 @@ Wenn ein Produkt nicht existiert:
 
 ---
 
-# Speisekarte (TOON)
+# Speisekarte
 
-Die folgende Struktur ist die **einzige Quelle für Produkte und Preise**.
+Du kannst dir die von uns angebotenen Speisen und Getränke mit dem Function Tool `GetMenu` holen.
 
-```toon
-menu:
-
-  currency: EUR
-
-  foods(id name price):
-    doner_kebab     "Döner Kebab"       6.50
-    durum_doner     "Dürüm Döner"       7.00
-    doner_box       "Döner Box"         6.00
-    falafel_bread   "Falafel im Brot"   6.00
-    falafel_plate   "Falafel Teller"    8.50
-    fries           "Pommes"            3.00
-
-  drinks(id name price):
-    cola        "Cola"        2.50
-    cola_zero   "Cola Zero"   2.50
-    fanta       "Fanta"       2.50
-    sprite      "Sprite"      2.50
-    ayran       "Ayran"       2.00
-    water       "Wasser"      2.00
-
-  extras(id name price):
-    extra_meat      "Extra Fleisch"   2.00
-    extra_cheese    "Extra Käse"      1.00
-    extra_falafel   "Extra Falafel"   1.50
-
-  sauces(name):
-    "Knoblauchsauce"
-    "Joghurtsauce"
-    "Scharfe Sauce"
-    "Kräutersauce"
-```
+ACHTUNG: Du darfst aus den Gesprächsbeispielen hier im Prompt KEINE Informationen über die Speisekarte entnehmen. Alle Informationen müssen über das Tool `GetMenu` abgerufen werden.
 
 ---
 
